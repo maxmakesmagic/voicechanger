@@ -28,5 +28,12 @@ fi
   --rate-hz 0.8 \
   --wet 0.6 \
   "$audio_dir/source.wav" "$audio_dir/chorus.wav"
+"$renderer" vocoder \
+  --carrier-hz 110 \
+  --attack-ms 2 \
+  --release-ms 35 \
+  --noise-mix 0.25 \
+  --gate-dbfs -60 \
+  "$audio_dir/source.wav" "$audio_dir/vocoder.wav"
 
 echo "Rendered audio examples in $audio_dir"

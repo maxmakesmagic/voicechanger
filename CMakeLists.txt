@@ -61,6 +61,7 @@ if(VOICECHANGER_BUILD_AUDIO_RENDERER)
     audio_example_renderer
     pitchshifter/PitchShiftFFT.cpp
     chorus/StereoChorus.cpp
+    vocoder/Vocoder.cpp
     tests/support/cmsis_fft_stub.cpp
     tools/WavFile.cpp
     tools/render_audio_examples.cpp)
@@ -69,6 +70,7 @@ if(VOICECHANGER_BUILD_AUDIO_RENDERER)
     audio_example_renderer
     pitchshifter
     chorus
+    vocoder
     tools)
 endif()
 
@@ -115,6 +117,22 @@ if(BUILD_TESTING)
   add_test(NAME chorus_tests COMMAND chorus_tests)
   set_tests_properties(
     chorus_tests
+    PROPERTIES
+      TIMEOUT 60)
+
+  add_executable(
+    vocoder_tests
+    vocoder/Vocoder.cpp
+    tests/support/cmsis_fft_stub.cpp
+    tests/test_vocoder.cpp)
+
+  # Exercise the production vocoder, including its internally generated
+  # carrier and block-to-STFT buffering, through AudioStream::update().
+  voicechanger_configure_native_target(vocoder_tests vocoder)
+
+  add_test(NAME vocoder_tests COMMAND vocoder_tests)
+  set_tests_properties(
+    vocoder_tests
     PROPERTIES
       TIMEOUT 60)
 

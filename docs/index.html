@@ -279,9 +279,9 @@
         <p class="eyebrow">Teensy audio effects</p>
         <h1>Hear the code.</h1>
         <p class="lede">
-          Compare one unprocessed recording with renders from the pitch shifter and
-          stereo chorus. Lossless WAV files keep codec artifacts out of the comparison,
-          and no post-effect loudness normalization is applied.
+          Compare one unprocessed recording with renders from the pitch shifter,
+          stereo chorus, and vocoder. Lossless WAV files keep codec artifacts out of
+          the comparison, and no post-effect loudness normalization is applied.
         </p>
       </header>
 
@@ -382,6 +382,36 @@
                 Your browser cannot play this WAV file.
               </audio>
               <a class="file-link" href="audio/chorus.wav">Open chorus WAV</a>
+            </div>
+          </article>
+
+          <article class="demo" aria-labelledby="vocoder-title">
+            <p class="kind">Vocoder</p>
+            <h2 id="vocoder-title">Robot voice</h2>
+            <p class="description">
+              Transfers the voice's spectral envelope to an internally generated
+              harmonic carrier, with noise preserving unvoiced consonants. An input
+              gate keeps low-level background hum from exciting the carrier.
+            </p>
+            <dl>
+              <dt>Carrier</dt>
+              <dd>110 Hz</dd>
+              <dt>Attack</dt>
+              <dd>2 ms</dd>
+              <dt>Release</dt>
+              <dd>35 ms</dd>
+              <dt>Noise mix</dt>
+              <dd>25%</dd>
+              <dt>Input gate</dt>
+              <dd>&minus;60 dBFS</dd>
+            </dl>
+            <div class="player">
+              <span class="player-label" id="vocoder-player-label">Play the vocoder</span>
+              <audio controls preload="metadata" aria-labelledby="vocoder-player-label">
+                <source src="audio/vocoder.wav" type="audio/wav">
+                Your browser cannot play this WAV file.
+              </audio>
+              <a class="file-link" href="audio/vocoder.wav">Open vocoder WAV</a>
             </div>
           </article>
         </section>

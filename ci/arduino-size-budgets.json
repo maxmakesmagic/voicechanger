@@ -9,6 +9,11 @@
       "FLASH": 92156,
       "RAM1": 117888,
       "RAM2": 18656
+    },
+    "vocoder": {
+      "FLASH": 92156,
+      "RAM1": 115936,
+      "RAM2": 18656
     }
   },
   "teensy:avr:teensy41:usb=serial,speed=600,opt=o2std,keys=en-us": {
@@ -20,6 +25,11 @@
     "pitchshifter": {
       "FLASH": 94204,
       "RAM1": 118912,
+      "RAM2": 18656
+    },
+    "vocoder": {
+      "FLASH": 94204,
+      "RAM1": 115936,
       "RAM2": 18656
     }
   }

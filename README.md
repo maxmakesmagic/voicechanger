@@ -69,7 +69,27 @@ width while keeping the shared dry voice centred.
 
 Compile it for either supported board by substituting `chorus` for
 `pitchshifter` in the commands above. The CI helper described below compiles
-both sketches automatically.
+all effect sketches automatically.
+
+## [`vocoder/`](vocoder/)
+
+A mono-input vocoder for Teensy 4.x and the Audio Shield. It extracts the
+microphone signal's changing spectral envelope and applies it to an internally
+generated harmonic carrier, with broadband noise mixed into the carrier to
+retain the intelligibility of unvoiced consonants.
+
+- `vocoder.ino` configures the Audio Shield, signal path, vocoder controls, and
+  runtime CPU/audio-memory reporting.
+- `Vocoder.h` and `Vocoder.cpp` implement the streaming AudioStream effect.
+- `VOCODER_CARRIER_HZ`, `VOCODER_ATTACK_MS`, `VOCODER_RELEASE_MS`,
+  `VOCODER_NOISE_MIX`, and `VOCODER_GATE_DBFS` in `vocoder.ino` control the
+  sound.
+
+The default sketch uses a 110 Hz carrier, 8 ms envelope attack, 80 ms envelope
+release, 15% noise mix, and a -45 dBFS input gate. The gate closes on low-level
+microphone noise so that background hum does not keep the synthetic carrier
+audible between phrases. Compile it for either supported board by substituting
+`vocoder` for `pitchshifter` in the commands above.
 
 ## [`libraries/`](libraries/)
 
@@ -88,7 +108,7 @@ sketchbook.
 ## [`docs/`](docs/)
 
 The audio demonstration compares one CC0 voice recording with renders produced
-by the production pitch-shifter and chorus classes:
+by the production pitch-shifter, chorus, and vocoder classes:
 
 | Example | Settings | WAV |
 |---|---|---|
@@ -96,6 +116,7 @@ by the production pitch-shifter and chorus classes:
 | Pitch up | Ratio `1.25` | [Listen/download](docs/audio/pitch-up-1.25.wav?raw=1) |
 | Pitch down | Ratio `0.80` | [Listen/download](docs/audio/pitch-down-0.80.wav?raw=1) |
 | Stereo chorus | 18 ms delay, 8 ms depth, 0.8 Hz, 60% wet | [Listen/download](docs/audio/chorus.wav?raw=1) |
+| Vocoder | 110 Hz carrier, 2 ms attack, 35 ms release, 25% noise, -60 dBFS gate | [Listen/download](docs/audio/vocoder.wav?raw=1) |
 
 `docs/index.html` provides native audio controls. After every successful CI run
 on `main`, the workflow publishes the complete `docs/` directory to GitHub
@@ -103,6 +124,10 @@ Pages. Enable it once in the repository settings by selecting **GitHub
 Actions** as the Pages build source. The WAV links above remain a fallback
 without Pages. [`docs/audio/README.md`](docs/audio/README.md) records the
 source, CC0 dedication, transformations, parameters, and hashes.
+
+The vocoder demo uses a faster, more consonant-forward preset than the live
+sketch default because it is clearer on the source recording. Both presets run
+through the same production vocoder implementation.
 
 ## [`tests/`](tests/)
 
@@ -148,6 +173,23 @@ The chorus tests verify:
 - preservation of delay history and modulation phase while bypassed; and
 - dry stereo fallback, correct block ownership, and continued DSP state if the
   Teensy AudioMemory pool cannot provide the second output block.
+
+The vocoder tests verify:
+
+- missing-input and exact-silence behavior;
+- analysis-band isolation and transfer of the microphone's spectral envelope
+  to the internally generated carrier;
+- envelope attack and release timing;
+- suppression of the carrier during modulator silence and below the configured
+  input-gate threshold;
+- deterministic harmonic-carrier and consonant-noise generation;
+- rejection of invalid and non-finite controls without partially changing the
+  active configuration;
+- polarity-invariant, linear envelope detection and excluded-frequency
+  rejection;
+- explicit reset of FFT, envelope, oscillator, FIFO, and noise-generator state;
+- independence from additional AudioMemory allocation; and
+- correct AudioStream block ownership throughout continuous operation.
 
 An integration test also regenerates the committed audio examples and checks
 their format, duration, channel layout, and PCM output within a small allowance
@@ -211,7 +253,7 @@ Changing both would make the measurements incomparable.
 `audio_example_renderer` reads mono 44.1 kHz PCM16 WAV files and streams them
 through the production effects in 128-sample AudioStream blocks. Pitch-shifter
 latency is derived from its DSP constants and removed from the rendered file;
-pitch outputs remain mono while chorus output is stereo.
+pitch-shifter and vocoder outputs remain mono while chorus output is stereo.
 
 Build the renderer and regenerate the checked-in examples with:
 
