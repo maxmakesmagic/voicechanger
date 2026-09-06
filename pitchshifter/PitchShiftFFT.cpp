@@ -1,4 +1,5 @@
 #include "PitchShiftFFT.h"
+#include <VoiceChangerAudioSample.h>
 #include <arm_common_tables.h>
 #include <arm_const_structs.h>
 #include <string.h>
@@ -281,11 +282,9 @@ void AudioEffectPitchShiftFFT::processFrame()
   // to the int16 audio range and hand them to the output FIFO.
   // https://en.wikipedia.org/wiki/Saturation_arithmetic
   for (int i = 0; i < HOP_SIZE; i++) {
-    float sample = outAccum[i];
-    if (sample > 32767.0f) sample = 32767.0f;
-    else if (sample < -32768.0f) sample = -32768.0f;
     if (outFifoCount < OUT_FIFO_SIZE) {
-      outFifo[outFifoHead] = (int16_t)sample;
+      outFifo[outFifoHead] =
+        voicechanger::saturatingFloatToInt16(outAccum[i]);
       outFifoHead = (outFifoHead + 1) & (OUT_FIFO_SIZE - 1);
       outFifoCount++;
     }

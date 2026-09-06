@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#17231f">
+    <title>Voicechanger effect demos</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --page: #eef1eb;
+        --surface: #f9faf6;
+        --surface-strong: #ffffff;
+        --text: #17231f;
+        --muted: #5b6862;
+        --border: #cbd2ca;
+        --accent: #006b55;
+        --accent-strong: #004f40;
+        --accent-soft: #d9eee7;
+        --note: #f5e9c8;
+        --note-border: #bc8521;
+        --shadow: 0 1rem 2.5rem rgb(23 35 31 / 10%);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-width: 18rem;
+        margin: 0;
+        background:
+          radial-gradient(circle at 10% 0%, rgb(0 107 85 / 12%), transparent 28rem),
+          var(--page);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.55;
+      }
+
+      a {
+        color: var(--accent-strong);
+        font-weight: 650;
+        text-underline-offset: 0.18em;
+      }
+
+      a:hover {
+        text-decoration-thickness: 0.14em;
+      }
+
+      a:focus-visible,
+      audio:focus-visible {
+        outline: 0.2rem solid var(--accent);
+        outline-offset: 0.2rem;
+      }
+
+      .skip-link {
+        position: fixed;
+        z-index: 10;
+        top: 0.75rem;
+        left: 0.75rem;
+        padding: 0.65rem 0.9rem;
+        border-radius: 0.4rem;
+        background: var(--surface-strong);
+        transform: translateY(-200%);
+      }
+
+      .skip-link:focus {
+        transform: translateY(0);
+      }
+
+      .page {
+        width: min(72rem, calc(100% - 2rem));
+        margin: 0 auto;
+      }
+
+      header {
+        padding: clamp(3.25rem, 8vw, 6.5rem) 0 2.5rem;
+      }
+
+      .eyebrow {
+        margin: 0 0 0.65rem;
+        color: var(--accent-strong);
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 12ch;
+        margin: 0;
+        font-size: clamp(2.4rem, 7vw, 5.25rem);
+        font-weight: 760;
+        letter-spacing: -0.055em;
+        line-height: 0.98;
+      }
+
+      .lede {
+        max-width: 43rem;
+        margin: 1.4rem 0 0;
+        color: var(--muted);
+        font-size: clamp(1rem, 2vw, 1.2rem);
+      }
+
+      main {
+        padding-bottom: 4rem;
+      }
+
+      .listening-note {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.8rem;
+        align-items: start;
+        margin: 0 0 1.5rem;
+        padding: 1rem 1.1rem;
+        border-left: 0.3rem solid var(--note-border);
+        border-radius: 0.35rem;
+        background: var(--note);
+        color: #33280f;
+      }
+
+      .listening-note strong {
+        white-space: nowrap;
+      }
+
+      .demos {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+      }
+
+      .demo {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        padding: clamp(1.15rem, 3vw, 1.75rem);
+        border: 1px solid var(--border);
+        border-radius: 1rem;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+
+      .demo--source {
+        grid-column: 1 / -1;
+        border-top: 0.35rem solid var(--accent);
+      }
+
+      .kind {
+        align-self: flex-start;
+        margin: 0 0 0.9rem;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      h2 {
+        margin: 0;
+        font-size: clamp(1.35rem, 3vw, 1.75rem);
+        letter-spacing: -0.025em;
+        line-height: 1.15;
+      }
+
+      .description {
+        margin: 0.65rem 0 0;
+        color: var(--muted);
+      }
+
+      dl {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 0.25rem 0.8rem;
+        margin: 1rem 0 1.25rem;
+        font-size: 0.92rem;
+      }
+
+      dt {
+        color: var(--muted);
+      }
+
+      dd {
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+      }
+
+      .player {
+        margin-top: auto;
+      }
+
+      .player-label {
+        display: block;
+        margin-bottom: 0.45rem;
+        font-size: 0.85rem;
+        font-weight: 750;
+      }
+
+      audio {
+        display: block;
+        width: 100%;
+        min-height: 3.4rem;
+      }
+
+      .file-link {
+        display: inline-block;
+        margin-top: 0.55rem;
+        font-size: 0.83rem;
+      }
+
+      footer {
+        margin-top: 1.5rem;
+        padding: 1.2rem 0 3.5rem;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      footer p {
+        max-width: 48rem;
+        margin: 0;
+      }
+
+      @media (max-width: 42rem) {
+        .demos {
+          grid-template-columns: 1fr;
+        }
+
+        .demo--source {
+          grid-column: auto;
+        }
+
+        .listening-note {
+          grid-template-columns: 1fr;
+          gap: 0.2rem;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --page: #111714;
+          --surface: #18211d;
+          --surface-strong: #222d28;
+          --text: #eef4ef;
+          --muted: #aab8b0;
+          --border: #36453e;
+          --accent: #57d1ad;
+          --accent-strong: #87e4c8;
+          --accent-soft: #173e33;
+          --note: #382e18;
+          --note-border: #d6a94e;
+          --shadow: 0 1rem 2.5rem rgb(0 0 0 / 22%);
+        }
+
+        .listening-note {
+          color: #f4dfad;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#demos">Skip to audio demos</a>
+
+    <div class="page">
+      <header>
+        <p class="eyebrow">Teensy audio effects</p>
+        <h1>Hear the code.</h1>
+        <p class="lede">
+          Compare one unprocessed recording with renders from the pitch shifter and
+          stereo chorus. Lossless WAV files keep codec artifacts out of the comparison,
+          and no post-effect loudness normalization is applied.
+        </p>
+      </header>
+
+      <main id="demos">
+        <aside class="listening-note" aria-label="Listening recommendation">
+          <strong>Use headphones.</strong>
+          <span>
+            The chorus moves its delay in opposite directions across the left and right
+            channels, so its stereo width is easiest to hear on headphones.
+          </span>
+        </aside>
+
+        <section class="demos" aria-label="Audio effect comparisons">
+          <article class="demo demo--source" aria-labelledby="source-title">
+            <p class="kind">Reference</p>
+            <h2 id="source-title">Unprocessed source</h2>
+            <p class="description">
+              The dry recording used as the input for every processed example below.
+            </p>
+            <dl>
+              <dt>Processing</dt>
+              <dd>None</dd>
+            </dl>
+            <div class="player">
+              <span class="player-label" id="source-player-label">Play the source audio</span>
+              <audio controls preload="metadata" aria-labelledby="source-player-label">
+                <source src="audio/source.wav" type="audio/wav">
+                Your browser cannot play this WAV file.
+              </audio>
+              <a class="file-link" href="audio/source.wav">Open source WAV</a>
+            </div>
+          </article>
+
+          <article class="demo" aria-labelledby="pitch-up-title">
+            <p class="kind">Pitch shift</p>
+            <h2 id="pitch-up-title">Pitch up</h2>
+            <p class="description">
+              Raises the perceived pitch while retaining the source clip's duration.
+            </p>
+            <dl>
+              <dt>Pitch ratio</dt>
+              <dd>1.25&times;</dd>
+              <dt>Direction</dt>
+              <dd>Up</dd>
+            </dl>
+            <div class="player">
+              <span class="player-label" id="pitch-up-player-label">Play pitch shifted up</span>
+              <audio controls preload="metadata" aria-labelledby="pitch-up-player-label">
+                <source src="audio/pitch-up-1.25.wav" type="audio/wav">
+                Your browser cannot play this WAV file.
+              </audio>
+              <a class="file-link" href="audio/pitch-up-1.25.wav">Open pitch-up WAV</a>
+            </div>
+          </article>
+
+          <article class="demo" aria-labelledby="pitch-down-title">
+            <p class="kind">Pitch shift</p>
+            <h2 id="pitch-down-title">Pitch down</h2>
+            <p class="description">
+              Lowers the perceived pitch while retaining the source clip's duration.
+            </p>
+            <dl>
+              <dt>Pitch ratio</dt>
+              <dd>0.80&times;</dd>
+              <dt>Direction</dt>
+              <dd>Down</dd>
+            </dl>
+            <div class="player">
+              <span class="player-label" id="pitch-down-player-label">Play pitch shifted down</span>
+              <audio controls preload="metadata" aria-labelledby="pitch-down-player-label">
+                <source src="audio/pitch-down-0.80.wav" type="audio/wav">
+                Your browser cannot play this WAV file.
+              </audio>
+              <a class="file-link" href="audio/pitch-down-0.80.wav">Open pitch-down WAV</a>
+            </div>
+          </article>
+
+          <article class="demo" aria-labelledby="chorus-title">
+            <p class="kind">Stereo chorus</p>
+            <h2 id="chorus-title">Chorus</h2>
+            <p class="description">
+              Blends the source with two smoothly modulated fractional-delay taps.
+            </p>
+            <dl>
+              <dt>Delay</dt>
+              <dd>18 ms</dd>
+              <dt>Depth</dt>
+              <dd>8 ms</dd>
+              <dt>Rate</dt>
+              <dd>0.8 Hz</dd>
+              <dt>Wet mix</dt>
+              <dd>60%</dd>
+            </dl>
+            <div class="player">
+              <span class="player-label" id="chorus-player-label">Play the stereo chorus</span>
+              <audio controls preload="metadata" aria-labelledby="chorus-player-label">
+                <source src="audio/chorus.wav" type="audio/wav">
+                Your browser cannot play this WAV file.
+              </audio>
+              <a class="file-link" href="audio/chorus.wav">Open chorus WAV</a>
+            </div>
+          </article>
+        </section>
+      </main>
+
+      <footer>
+        <p>
+          The processed examples use the effect implementations in this repository.
+          Source attribution, licensing, render details, and reproduction notes are in
+          <a href="https://github.com/maxmakesmagic/voicechanger/blob/main/docs/audio/README.md">the audio provenance record</a>.
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>
