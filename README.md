@@ -64,6 +64,8 @@ The tests currently verify:
   with better than 60 dB SNR and tightly bounded gain error;
 - correct signs for the real-only DC and Nyquist FFT bins;
 - CMSIS-compatible RFFT packing, phase sign, and forward/inverse scaling;
+- CMSIS-compatible sine/cosine approximation accuracy across the full wrapped
+  phase range;
 - pitch movement for bin-centered tones at ratios `0.8` and `1.25`;
 - pitch accuracy for a tone that lies between FFT bins;
 - explicit state reset and stable per-slice gain after an unrelated signal;

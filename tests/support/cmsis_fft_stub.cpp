@@ -15,6 +15,20 @@ namespace {
 
 constexpr double kTwoPi = 6.283185307179586476925286766559;
 constexpr std::size_t kMaximumFftSize = 1024;
+constexpr std::size_t kFastMathTableSize = 512;
+
+const std::array<float, kFastMathTableSize + 1> &fastSinTable()
+{
+  static const std::array<float, kFastMathTableSize + 1> table = [] {
+    std::array<float, kFastMathTableSize + 1> values{};
+    for (std::size_t i = 0; i <= kFastMathTableSize; ++i) {
+      values[i] = static_cast<float>(std::sin(
+        kTwoPi * static_cast<double>(i) / kFastMathTableSize));
+    }
+    return values;
+  }();
+  return table;
+}
 
 bool isPowerOfTwo(std::size_t value)
 {
@@ -176,5 +190,56 @@ void arm_rfft_fast_f32(arm_rfft_fast_instance_f32 *instance,
   for (std::size_t i = 0; i < complexSize; ++i) {
     output[2 * i] = values[i].real();
     output[2 * i + 1] = values[i].imag();
+  }
+}
+
+void arm_sin_cos_f32(float32_t theta,
+                     float32_t *sine,
+                     float32_t *cosine)
+{
+  if (sine == nullptr || cosine == nullptr) {
+    throw std::invalid_argument("invalid sin/cos output");
+  }
+
+  // Match the table size and cubic Hermite interpolation used by the CMSIS
+  // implementation bundled with Teensy core 1.62. The target API takes
+  // degrees rather than radians.
+  float turns = theta * (1.0f / 360.0f);
+  const bool negative = turns < 0.0f;
+  if (negative) {
+    turns = -turns;
+  }
+  turns -= static_cast<std::int32_t>(turns);
+
+  const float tablePosition = kFastMathTableSize * turns;
+  const std::uint16_t sineIndex =
+    static_cast<std::uint16_t>(tablePosition) & 0x1FFU;
+  const std::uint16_t cosineIndex =
+    (sineIndex + kFastMathTableSize / 4) & 0x1FFU;
+  const float fraction = tablePosition - sineIndex;
+  const auto &table = fastSinTable();
+  constexpr float tableStep =
+    static_cast<float>(kTwoPi / kFastMathTableSize);
+
+  const auto interpolate = [fraction](float first,
+                                      float second,
+                                      float firstDerivative,
+                                      float secondDerivative) {
+    const float difference = second - first;
+    float term = tableStep * (firstDerivative + secondDerivative) -
+                 2.0f * difference;
+    term = fraction * term +
+           (3.0f * difference -
+            (secondDerivative + 2.0f * firstDerivative) * tableStep);
+    term = fraction * term + firstDerivative * tableStep;
+    return fraction * term + first;
+  };
+
+  *cosine = interpolate(table[cosineIndex], table[cosineIndex + 1],
+                        -table[sineIndex], -table[sineIndex + 1]);
+  *sine = interpolate(table[sineIndex], table[sineIndex + 1],
+                      table[cosineIndex], table[cosineIndex + 1]);
+  if (negative) {
+    *sine = -*sine;
   }
 }

@@ -11,6 +11,7 @@ namespace {
 // much slower double-precision work.
 constexpr float kTwoPi = 6.283185307179586476925286766559f;
 constexpr float kInverseTwoPi = 1.0f / kTwoPi;
+constexpr float kRadiansToDegrees = 360.0f / kTwoPi;
 
 // The direct initializer below deliberately selects CMSIS's fixed 1024-point
 // real twiddle table. Keep a compile-time tripwire here so changing FFT_SIZE
@@ -20,12 +21,9 @@ static_assert(AudioEffectPitchShiftFFT::FFT_SIZE == 1024,
 
 inline void sinCos(float angle, float &sine, float &cosine)
 {
-#if defined(__GNUC__) && !defined(__clang__)
-  __builtin_sincosf(angle, &sine, &cosine);
-#else
-  sine = sinf(angle);
-  cosine = cosf(angle);
-#endif
+  // CMSIS accepts degrees. The caller keeps angle in [-pi, pi], so the
+  // converted value stays in the function's preferred [-180, 180] range.
+  arm_sin_cos_f32(angle * kRadiansToDegrees, &sine, &cosine);
 }
 
 } // namespace
