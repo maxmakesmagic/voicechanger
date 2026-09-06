@@ -289,6 +289,39 @@ void testReferenceRealFftPackingAndRoundTrip()
           measured("reference RFFT round-trip error", maxError, 0.0));
 }
 
+void testReferenceSinCosAccuracy()
+{
+  double maximumSineError = 0.0;
+  double maximumCosineError = 0.0;
+  double maximumIdentityError = 0.0;
+  for (int step = -18000; step <= 18000; ++step) {
+    const float degrees = static_cast<float>(step) / 100.0f;
+    float sine = 0.0f;
+    float cosine = 0.0f;
+    arm_sin_cos_f32(degrees, &sine, &cosine);
+    const double radians = static_cast<double>(degrees) * kTwoPi / 360.0;
+    maximumSineError = std::max(
+      maximumSineError, std::abs(static_cast<double>(sine) - std::sin(radians)));
+    maximumCosineError = std::max(
+      maximumCosineError,
+      std::abs(static_cast<double>(cosine) - std::cos(radians)));
+    maximumIdentityError = std::max(
+      maximumIdentityError,
+      std::abs(static_cast<double>(sine) * sine +
+               static_cast<double>(cosine) * cosine - 1.0));
+  }
+
+  require(maximumSineError < 1.0e-5,
+          measured("reference sine approximation error",
+                   maximumSineError, 0.0));
+  require(maximumCosineError < 1.0e-5,
+          measured("reference cosine approximation error",
+                   maximumCosineError, 0.0));
+  require(maximumIdentityError < 1.0e-5,
+          measured("reference sin/cos identity error",
+                   maximumIdentityError, 0.0));
+}
+
 void testNoInputDoesNothing()
 {
   AudioStream::resetTestState();
@@ -585,6 +618,7 @@ int main()
     {"reference FFT round trip", testReferenceFftRoundTrip},
     {"reference real FFT packing and round trip",
      testReferenceRealFftPackingAndRoundTrip},
+    {"reference CMSIS sin/cos accuracy", testReferenceSinCosAccuracy},
     {"no input", testNoInputDoesNothing},
     {"stream reset", testResetDiscardsBufferedAudioAndPhaseHistory},
     {"silence", testSilenceIsExactlySilent},

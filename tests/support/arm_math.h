@@ -33,4 +33,8 @@ void arm_rfft_fast_f32(arm_rfft_fast_instance_f32 *instance,
                        float32_t *output,
                        std::uint8_t inverse);
 
+void arm_sin_cos_f32(float32_t theta,
+                     float32_t *sine,
+                     float32_t *cosine);
+
 #endif
