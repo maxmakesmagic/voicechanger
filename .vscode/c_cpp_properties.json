@@ -12,6 +12,7 @@
     ],
     "teensyIncludes": [
       "${workspaceFolder}",
+      "${workspaceFolder}/pitchshifter",
       "${teensyPlatform}/cores/teensy4",
       "${teensyPlatform}/libraries/Audio",
       "${teensyPlatform}/libraries/SPI",
