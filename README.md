@@ -63,8 +63,10 @@ The tests currently verify:
 - broadband unity-ratio reconstruction after the expected pipeline latency,
   with better than 60 dB SNR and tightly bounded gain error;
 - correct signs for the real-only DC and Nyquist FFT bins;
+- CMSIS-compatible RFFT packing, phase sign, and forward/inverse scaling;
 - pitch movement for bin-centered tones at ratios `0.8` and `1.25`;
 - pitch accuracy for a tone that lies between FFT bins;
+- explicit state reset and stable per-slice gain after an unrelated signal;
 - suppression, rather than aliasing, when an upward-shifted tone exceeds
   Nyquist; and
 - memory and undefined-behavior checks under AddressSanitizer and UBSan.

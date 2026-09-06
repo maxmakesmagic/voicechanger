@@ -1,4 +1,5 @@
 #include "PitchShiftFFT.h"
+#include <arm_common_tables.h>
 #include <arm_const_structs.h>
 #include <string.h>
 #include <math.h>
@@ -10,6 +11,12 @@ namespace {
 // much slower double-precision work.
 constexpr float kTwoPi = 6.283185307179586476925286766559f;
 constexpr float kInverseTwoPi = 1.0f / kTwoPi;
+
+// The direct initializer below deliberately selects CMSIS's fixed 1024-point
+// real twiddle table. Keep a compile-time tripwire here so changing FFT_SIZE
+// cannot silently pair the algorithm with the wrong table.
+static_assert(AudioEffectPitchShiftFFT::FFT_SIZE == 1024,
+              "the fixed CMSIS RFFT initializer requires FFT_SIZE == 1024");
 
 inline void sinCos(float angle, float &sine, float &cosine)
 {
@@ -37,17 +44,18 @@ AudioEffectPitchShiftFFT::AudioEffectPitchShiftFFT()
   : AudioStream(1, inputQueueArray), pitchRatio(1.0f), inBufFill(0),
     outFifoHead(0), outFifoTail(0), outFifoCount(0)
 {
+  // arm_rfft_fast_init_f32() references tables for every supported transform
+  // length in this CMSIS release. Constructing the fixed 1024-point instance
+  // directly keeps unused tables out of the firmware.
+  rfft.Sint = arm_cfft_sR_f32_len512;
+  rfft.fftLenRFFT = FFT_SIZE;
+  rfft.pTwiddleRFFT =
+    const_cast<float32_t *>(twiddleCoef_rfft_1024);
+
   for (int i = 0; i < FFT_SIZE; i++) {
     window[i] = 0.5f - 0.5f * cosf(kTwoPi * (float)i / (float)FFT_SIZE); // periodic Hann
-    inBuf[i] = 0.0f;
-    outAccum[i] = 0.0f;
   }
-  for (int i = 0; i < NUM_BINS; i++) {
-    lastPhase[i] = 0.0f;
-    synthPhaseAccum[i] = 0.0f;
-    synthMag[i] = 0.0f;
-    synthFreq[i] = 0.0f;
-  }
+  reset();
 }
 
 /**
@@ -62,6 +70,32 @@ void AudioEffectPitchShiftFFT::setPitchRatio(float ratio)
   if (isfinite(ratio) && ratio > 0.0f) {
     pitchRatio = ratio;
   }
+}
+
+/**
+ * Discard all buffered audio and phase-vocoder history.
+ *
+ * The selected pitch ratio is retained. This provides a deterministic stream
+ * boundary for tests and lets applications prevent one disconnected signal
+ * from contributing phase history to the next. On Teensy, callers must pause
+ * Audio updates around this operation.
+ */
+void AudioEffectPitchShiftFFT::reset()
+{
+  inBufFill = 0;
+  outFifoHead = 0;
+  outFifoTail = 0;
+  outFifoCount = 0;
+
+  memset(inBuf, 0, sizeof(inBuf));
+  memset(outAccum, 0, sizeof(outAccum));
+  memset(outFifo, 0, sizeof(outFifo));
+  memset(lastPhase, 0, sizeof(lastPhase));
+  memset(synthPhaseAccum, 0, sizeof(synthPhaseAccum));
+  memset(synthMag, 0, sizeof(synthMag));
+  memset(synthFreq, 0, sizeof(synthFreq));
+  memset(fftTimeBuf, 0, sizeof(fftTimeBuf));
+  memset(fftFreqBuf, 0, sizeof(fftFreqBuf));
 }
 
 /**
@@ -129,12 +163,11 @@ void AudioEffectPitchShiftFFT::processFrame()
 
   // --- Analysis: one windowed short-time Fourier transform (STFT) frame ---
   for (int i = 0; i < FFT_SIZE; i++) {
-    fftBuf[2 * i]     = inBuf[i] * window[i];
-    fftBuf[2 * i + 1] = 0.0f;
+    fftTimeBuf[i] = inBuf[i] * window[i];
   }
-  // The FFT is the efficient algorithm used here to compute the frame's DFT.
-  // https://en.wikipedia.org/wiki/Fast_Fourier_transform
-  arm_cfft_f32(&arm_cfft_sR_f32_len1024, fftBuf, 0, 1);
+  // The fast RFFT uses an internal 512-point CFFT and packs the unique half of
+  // the spectrum into FFT_SIZE floats: DC, Nyquist, then complex bins 1..511.
+  arm_rfft_fast_f32(&rfft, fftTimeBuf, fftFreqBuf, 0);
 
   // A sinusoid centered on bin k advances by k * 2*pi*H/N radians between
   // frames, where H is HOP_SIZE and N is FFT_SIZE.
@@ -148,8 +181,16 @@ void AudioEffectPitchShiftFFT::processFrame()
   }
 
   for (int k = 0; k < NUM_BINS; k++) {
-    float re = fftBuf[2 * k];
-    float im = fftBuf[2 * k + 1];
+    float re;
+    float im = 0.0f;
+    if (k == 0) {
+      re = fftFreqBuf[0];
+    } else if (k == NUM_BINS - 1) {
+      re = fftFreqBuf[1];
+    } else {
+      re = fftFreqBuf[2 * k];
+      im = fftFreqBuf[2 * k + 1];
+    }
     float mag = sqrtf(re * re + im * im);
     float phase = atan2f(im, re);
 
@@ -194,8 +235,7 @@ void AudioEffectPitchShiftFFT::processFrame()
     // DC and Nyquist must be real, so they need neither phase accumulation nor
     // trigonometry.
     if (k == 0 || k == NUM_BINS - 1) {
-      fftBuf[2 * k] = synthMag[k];
-      fftBuf[2 * k + 1] = 0.0f;
+      fftFreqBuf[k == 0 ? 0 : 1] = synthMag[k];
       continue;
     }
 
@@ -206,15 +246,15 @@ void AudioEffectPitchShiftFFT::processFrame()
     synthPhaseAccum[k] -=
       kTwoPi * roundf(synthPhaseAccum[k] * kInverseTwoPi);
 
-    const int mirror = FFT_SIZE - k;
     // Pitch remapping leaves some output bins empty. Preserve their phase
-    // state above, but avoid trigonometry when multiplying by zero would
-    // produce an empty coefficient anyway.
+    // state only while they contain energy. Resetting an inactive bin prevents
+    // an unrelated earlier signal from setting the relative phase when that
+    // bin becomes active again. Also avoid trigonometry when multiplying by
+    // zero would produce an empty coefficient anyway.
     if (synthMag[k] == 0.0f) {
-      fftBuf[2 * k] = 0.0f;
-      fftBuf[2 * k + 1] = 0.0f;
-      fftBuf[2 * mirror] = 0.0f;
-      fftBuf[2 * mirror + 1] = 0.0f;
+      synthPhaseAccum[k] = 0.0f;
+      fftFreqBuf[2 * k] = 0.0f;
+      fftFreqBuf[2 * k + 1] = 0.0f;
       continue;
     }
 
@@ -223,16 +263,11 @@ void AudioEffectPitchShiftFFT::processFrame()
     sinCos(synthPhaseAccum[k], sine, cosine);
     float re = synthMag[k] * cosine;
     float im = synthMag[k] * sine;
-    fftBuf[2 * k] = re;
-    fftBuf[2 * k + 1] = im;
-    // A real time-domain signal has conjugate-symmetric positive and negative
-    // frequency bins: X[N-k] = conjugate(X[k]).
-    // https://en.wikipedia.org/wiki/Discrete_Fourier_transform#DFT_of_real_and_purely_imaginary_signals
-    fftBuf[2 * mirror] = re;
-    fftBuf[2 * mirror + 1] = -im;
+    fftFreqBuf[2 * k] = re;
+    fftFreqBuf[2 * k + 1] = im;
   }
 
-  arm_cfft_f32(&arm_cfft_sR_f32_len1024, fftBuf, 1, 1); // includes the 1/FFT_SIZE scaling
+  arm_rfft_fast_f32(&rfft, fftFreqBuf, fftTimeBuf, 1);
 
   // Weighted overlap-add (WOLA): because both analysis and synthesis multiply
   // by Hann, four overlapping squared periodic Hann windows sum to 1.5. The
@@ -241,7 +276,7 @@ void AudioEffectPitchShiftFFT::processFrame()
   const float OUTPUT_GAIN = 1.0f / 1.5f;
 
   for (int i = 0; i < FFT_SIZE; i++) {
-    outAccum[i] += fftBuf[2 * i] * window[i] * OUTPUT_GAIN;
+    outAccum[i] += fftTimeBuf[i] * window[i] * OUTPUT_GAIN;
   }
 
   // No future frame can overlap the oldest HOP_SIZE samples, so saturate them

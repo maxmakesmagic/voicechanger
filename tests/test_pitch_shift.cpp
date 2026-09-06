@@ -226,6 +226,69 @@ void testReferenceFftRoundTrip()
           measured("reference FFT round-trip error", maxError, 0.0));
 }
 
+void testReferenceRealFftPackingAndRoundTrip()
+{
+  constexpr std::size_t size = AudioEffectPitchShiftFFT::FFT_SIZE;
+  arm_rfft_fast_instance_f32 instance{};
+  require(arm_rfft_fast_init_f32(&instance, size) == ARM_MATH_SUCCESS,
+          "reference RFFT initialization failed");
+
+  std::vector<float> input(size, 0.0f);
+  std::vector<float> spectrum(size, 0.0f);
+  input[0] = 1.0f;
+  arm_rfft_fast_f32(&instance, input.data(), spectrum.data(), 0);
+  require(std::abs(spectrum[0] - 1.0f) < 2.0e-5f,
+          "RFFT impulse DC coefficient is incorrect");
+  require(std::abs(spectrum[1] - 1.0f) < 2.0e-5f,
+          "RFFT impulse Nyquist coefficient is incorrect");
+  for (std::size_t bin = 1; bin < size / 2; ++bin) {
+    require(std::abs(spectrum[2 * bin] - 1.0f) < 2.0e-5f &&
+              std::abs(spectrum[2 * bin + 1]) < 2.0e-5f,
+            "RFFT impulse spectrum packing is incorrect");
+  }
+
+  std::fill(input.begin(), input.end(), -0.25f);
+  arm_rfft_fast_f32(&instance, input.data(), spectrum.data(), 0);
+  require(std::abs(spectrum[0] + 0.25f * size) < 2.0e-3f,
+          "RFFT lost the sign of negative DC");
+  require(std::abs(spectrum[1]) < 2.0e-3f,
+          "RFFT negative DC leaked into Nyquist");
+
+  for (std::size_t i = 0; i < size; ++i) {
+    input[i] = (i & 1U) == 0 ? -0.25f : 0.25f;
+  }
+  arm_rfft_fast_f32(&instance, input.data(), spectrum.data(), 0);
+  require(std::abs(spectrum[0]) < 2.0e-3f,
+          "RFFT Nyquist input leaked into DC");
+  require(std::abs(spectrum[1] + 0.25f * size) < 2.0e-3f,
+          "RFFT lost the sign of the Nyquist coefficient");
+
+  for (std::size_t i = 0; i < size; ++i) {
+    input[i] = static_cast<float>(
+      0.5 * std::cos(kTwoPi * 113.0 * static_cast<double>(i) / size) +
+      0.25 * std::sin(kTwoPi * 23.0 * static_cast<double>(i) / size));
+  }
+  const std::vector<float> original = input;
+  arm_rfft_fast_f32(&instance, input.data(), spectrum.data(), 0);
+  require(std::abs(spectrum[2 * 113] - 0.25f * size) < 0.02f &&
+            std::abs(spectrum[2 * 113 + 1]) < 0.02f,
+          "RFFT cosine-bin packing is incorrect");
+  require(std::abs(spectrum[2 * 23]) < 0.02f &&
+            std::abs(spectrum[2 * 23 + 1] + 0.125f * size) < 0.02f,
+          "RFFT sine-bin packing or phase sign is incorrect");
+
+  std::vector<float> reconstructed(size, 0.0f);
+  arm_rfft_fast_f32(&instance, spectrum.data(), reconstructed.data(), 1);
+  double maxError = 0.0;
+  for (std::size_t i = 0; i < size; ++i) {
+    maxError = std::max(
+      maxError,
+      std::abs(static_cast<double>(reconstructed[i] - original[i])));
+  }
+  require(maxError < 2.0e-5,
+          measured("reference RFFT round-trip error", maxError, 0.0));
+}
+
 void testNoInputDoesNothing()
 {
   AudioStream::resetTestState();
@@ -235,6 +298,42 @@ void testNoInputDoesNothing()
           "update() transmitted a block when no input was available");
   require(AudioStream::releaseCount() == 0,
           "update() released a block when no input was available");
+}
+
+void testResetDiscardsBufferedAudioAndPhaseHistory()
+{
+  constexpr std::size_t sampleCount =
+    12 * AudioEffectPitchShiftFFT::FFT_SIZE;
+  const Samples tone = makeTone(32.0, 6000.0, sampleCount);
+
+  AudioStream::resetTestState();
+  AudioEffectPitchShiftFFT effect;
+  effect.setPitchRatio(1.25f);
+  bool producedNonzero = false;
+  for (std::size_t offset = 0; offset < tone.size();
+       offset += AUDIO_BLOCK_SAMPLES) {
+    audio_block_t block{};
+    std::copy_n(tone.begin() + static_cast<std::ptrdiff_t>(offset),
+                AUDIO_BLOCK_SAMPLES, block.data);
+    AudioStream::queueTestInput(&block);
+    effect.update();
+    producedNonzero = producedNonzero ||
+      std::any_of(std::begin(block.data), std::end(block.data),
+                  [](int16_t sample) { return sample != 0; });
+  }
+  require(producedNonzero, "reset test did not prime the effect with audio");
+
+  effect.reset();
+  for (std::size_t offset = 0; offset < sampleCount;
+       offset += AUDIO_BLOCK_SAMPLES) {
+    audio_block_t block{};
+    AudioStream::queueTestInput(&block);
+    effect.update();
+    require(std::all_of(std::begin(block.data), std::end(block.data),
+                        [](int16_t sample) { return sample == 0; }),
+            "reset left buffered audio or phase energy in the stream");
+  }
+  AudioStream::resetTestState();
 }
 
 void testSilenceIsExactlySilent()
@@ -322,8 +421,16 @@ void testUnityPreservesSignedFftEndpoints()
   const double dcMean = mean(dcOutput, start, count);
   require(std::abs(dcMean - kDcLevel) < 2.0,
           measured("negative DC level", dcMean, kDcLevel));
-  require(rms(dcOutput, start, count) > 4998.0,
-          "negative DC was attenuated unexpectedly");
+  long double dcErrorEnergy = 0.0;
+  for (std::size_t i = start; i < start + count; ++i) {
+    const long double error =
+      dcOutput[i] - dcInput[i - kStreamingLatency];
+    dcErrorEnergy += error * error;
+  }
+  const double dcErrorRms =
+    std::sqrt(static_cast<double>(dcErrorEnergy / count));
+  require(dcErrorRms < 2.0,
+          measured("negative DC reconstruction RMS error", dcErrorRms, 0.0));
 
   Samples nyquistInput(kSampleCount);
   for (std::size_t i = 0; i < nyquistInput.size(); ++i) {
@@ -344,7 +451,8 @@ void testUnityPreservesSignedFftEndpoints()
 void checkShiftedTone(double inputBin,
                       float ratio,
                       double expectedBin,
-                      double pitchTolerance)
+                      double pitchTolerance,
+                      double minimumRmsFraction)
 {
   constexpr std::size_t kSampleCount = 24 * AudioEffectPitchShiftFFT::FFT_SIZE;
   constexpr std::size_t kMeasureStart =
@@ -365,24 +473,93 @@ void checkShiftedTone(double inputBin,
           measured("shifted tone FFT bin", detected, expectedBin));
 
   const double outputRms = rms(output, kMeasureStart, kMeasureCount);
-  require(outputRms > 0.20 * kAmplitude,
-          measured("shifted tone RMS", outputRms, 0.20 * kAmplitude));
+  require(outputRms > minimumRmsFraction * kAmplitude,
+          measured("shifted tone RMS", outputRms,
+                   minimumRmsFraction * kAmplitude));
 
-  const int dominantBin =
-    dominantIntegerBin(output, kMeasureStart, kMeasureCount);
-  require(std::abs(static_cast<double>(dominantBin) - expectedBin) <= 1.0,
-          measured("dominant integer FFT bin", dominantBin, expectedBin));
+  for (std::size_t offset = 0; offset < kMeasureCount;
+       offset += AudioEffectPitchShiftFFT::FFT_SIZE) {
+    const int dominantBin = dominantIntegerBin(
+      output,
+      kMeasureStart + offset,
+      AudioEffectPitchShiftFFT::FFT_SIZE);
+    require(std::abs(static_cast<double>(dominantBin) - expectedBin) <= 1.0,
+            measured("dominant integer FFT bin", dominantBin, expectedBin));
+  }
 }
 
 void testPitchShiftsBinCenteredTones()
 {
-  checkShiftedTone(32.0, 1.25f, 40.0, 0.05);
-  checkShiftedTone(40.0, 0.8f, 32.0, 0.05);
+  // A bin-centred sine has an input RMS of amplitude/sqrt(2). Leave margin
+  // for phase-vocoder/window loss, but reject the multi-decibel attenuation
+  // that can otherwise hide behind a mere "non-silent output" check.
+  checkShiftedTone(32.0, 1.25f, 40.0, 0.05, 0.60);
+  checkShiftedTone(40.0, 0.8f, 32.0, 0.05, 0.60);
 }
 
 void testPitchShiftsOffBinTone()
 {
-  checkShiftedTone(50.3, 1.25f, 62.875, 0.20);
+  checkShiftedTone(50.3, 1.25f, 62.875, 0.20, 0.45);
+}
+
+void testInactiveSynthesisBinsDoNotRetainUnrelatedPhase()
+{
+  constexpr std::size_t toneSamples =
+    24 * AudioEffectPitchShiftFFT::FFT_SIZE;
+  constexpr std::size_t silenceSamples =
+    8 * AudioEffectPitchShiftFFT::FFT_SIZE;
+  constexpr double amplitude = 6000.0;
+
+  AudioStream::resetTestState();
+  AudioEffectPitchShiftFFT effect;
+  const auto stream = [&effect](const Samples &input) {
+    Samples output;
+    output.reserve(input.size());
+    for (std::size_t offset = 0; offset < input.size();
+         offset += AUDIO_BLOCK_SAMPLES) {
+      audio_block_t block{};
+      std::copy_n(input.begin() + static_cast<std::ptrdiff_t>(offset),
+                  AUDIO_BLOCK_SAMPLES, block.data);
+      AudioStream::queueTestInput(&block);
+      effect.update();
+      output.insert(output.end(), std::begin(block.data), std::end(block.data));
+    }
+    return output;
+  };
+
+  effect.setPitchRatio(1.25f);
+  stream(makeTone(32.0, amplitude, toneSamples));
+  stream(Samples(silenceSamples, 0));
+  effect.setPitchRatio(0.8f);
+  const Samples downTone = makeTone(40.0, amplitude, toneSamples);
+  const Samples downshifted = stream(downTone);
+
+  constexpr std::size_t measureStart =
+    8 * AudioEffectPitchShiftFFT::FFT_SIZE;
+  constexpr std::size_t measureCount =
+    8 * AudioEffectPitchShiftFFT::FFT_SIZE;
+  const double outputRms = rms(downshifted, measureStart, measureCount);
+  require(outputRms > 0.60 * amplitude,
+          measured("downshift RMS after an unrelated prior signal",
+                   outputRms, 0.60 * amplitude));
+  const double detected = peakBinNear(
+    downshifted, measureStart, measureCount, 32.0, 2.0, 0.025);
+  require(std::abs(detected - 32.0) <= 0.05,
+          measured("downshift bin after an unrelated prior signal",
+                   detected, 32.0));
+
+  const Samples freshDownshift = runEffect(downTone, 0.8f);
+  for (std::size_t offset = 0; offset < measureCount;
+       offset += AudioEffectPitchShiftFFT::FFT_SIZE) {
+    const double transitionedSlice = rms(
+      downshifted, measureStart + offset, AudioEffectPitchShiftFFT::FFT_SIZE);
+    const double freshSlice = rms(
+      freshDownshift, measureStart + offset, AudioEffectPitchShiftFFT::FFT_SIZE);
+    require(std::abs(transitionedSlice / freshSlice - 1.0) < 0.01,
+            measured("downshift slice gain after prior signal",
+                     transitionedSlice / freshSlice, 1.0));
+  }
+  AudioStream::resetTestState();
 }
 
 void testBinsShiftedPastNyquistAreDiscarded()
@@ -406,7 +583,10 @@ int main()
 {
   const std::vector<std::pair<std::string, std::function<void()>>> tests = {
     {"reference FFT round trip", testReferenceFftRoundTrip},
+    {"reference real FFT packing and round trip",
+     testReferenceRealFftPackingAndRoundTrip},
     {"no input", testNoInputDoesNothing},
+    {"stream reset", testResetDiscardsBufferedAudioAndPhaseHistory},
     {"silence", testSilenceIsExactlySilent},
     {"invalid pitch ratios", testInvalidRatiosRetainTheLastValidRatio},
     {"unity broadband reconstruction",
@@ -414,6 +594,8 @@ int main()
     {"signed FFT endpoints", testUnityPreservesSignedFftEndpoints},
     {"bin-centered pitch shifts", testPitchShiftsBinCenteredTones},
     {"off-bin pitch shift", testPitchShiftsOffBinTone},
+    {"inactive synthesis-bin phase reset",
+     testInactiveSynthesisBinsDoNotRetainUnrelatedPhase},
     {"above-Nyquist suppression", testBinsShiftedPastNyquistAreDiscarded},
   };
 

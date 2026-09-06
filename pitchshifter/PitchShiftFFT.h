@@ -19,6 +19,9 @@ public:
   // >1.0 shifts up and <1.0 shifts down. Non-finite and non-positive
   // values are ignored, preserving the last valid ratio.
   void setPitchRatio(float ratio);
+  // Clear all streaming audio and phase history while preserving pitchRatio.
+  // Pause Audio updates before calling this on target hardware.
+  void reset();
   virtual void update(void);
 
   static const int FFT_SIZE = 1024;
@@ -37,7 +40,11 @@ private:
   float inBuf[FFT_SIZE]; // sliding history of the most recent input samples
   int inBufFill;         // new input samples accumulated since the last hop
 
-  float fftBuf[FFT_SIZE * 2]; // interleaved real/imag scratch for arm_cfft_f32
+  arm_rfft_fast_instance_f32 rfft;
+  // CMSIS fast RFFT requires distinct N-float input and output buffers. Its
+  // frequency output packs DC and Nyquist into the first two elements.
+  float fftTimeBuf[FFT_SIZE];
+  float fftFreqBuf[FFT_SIZE];
 
   float lastPhase[NUM_BINS];       // analysis phase from the previous hop
   float synthPhaseAccum[NUM_BINS]; // running output phase, per output bin
