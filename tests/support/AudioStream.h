@@ -5,6 +5,7 @@
 #include <cstdint>
 
 constexpr int AUDIO_BLOCK_SAMPLES = 128;
+constexpr float AUDIO_SAMPLE_RATE_EXACT = 44100.0f;
 
 struct audio_block_t {
   int16_t data[AUDIO_BLOCK_SAMPLES]{};

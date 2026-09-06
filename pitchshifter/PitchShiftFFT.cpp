@@ -3,6 +3,26 @@
 #include <string.h>
 #include <math.h>
 
+namespace {
+
+// Keep phase arithmetic in single precision on Cortex-M7. Arduino's TWO_PI is
+// a double constant, and division by it otherwise promotes the hot loops to
+// much slower double-precision work.
+constexpr float kTwoPi = 6.283185307179586476925286766559f;
+constexpr float kInverseTwoPi = 1.0f / kTwoPi;
+
+inline void sinCos(float angle, float &sine, float &cosine)
+{
+#if defined(__GNUC__) && !defined(__clang__)
+  __builtin_sincosf(angle, &sine, &cosine);
+#else
+  sine = sinf(angle);
+  cosine = cosf(angle);
+#endif
+}
+
+} // namespace
+
 /**
  * Construct a silent pitch shifter at unity pitch and precompute its window.
  *
@@ -18,7 +38,7 @@ AudioEffectPitchShiftFFT::AudioEffectPitchShiftFFT()
     outFifoHead(0), outFifoTail(0), outFifoCount(0)
 {
   for (int i = 0; i < FFT_SIZE; i++) {
-    window[i] = 0.5f - 0.5f * cosf(TWO_PI * (float)i / (float)FFT_SIZE); // periodic Hann
+    window[i] = 0.5f - 0.5f * cosf(kTwoPi * (float)i / (float)FFT_SIZE); // periodic Hann
     inBuf[i] = 0.0f;
     outAccum[i] = 0.0f;
   }
@@ -103,6 +123,10 @@ void AudioEffectPitchShiftFFT::update(void)
  */
 void AudioEffectPitchShiftFFT::processFrame()
 {
+  // Use one coherent ratio for the whole frame and keep it in a local so calls
+  // to the math library cannot force repeated member reloads.
+  const float ratio = pitchRatio;
+
   // --- Analysis: one windowed short-time Fourier transform (STFT) frame ---
   for (int i = 0; i < FFT_SIZE; i++) {
     fftBuf[2 * i]     = inBuf[i] * window[i];
@@ -114,7 +138,9 @@ void AudioEffectPitchShiftFFT::processFrame()
 
   // A sinusoid centered on bin k advances by k * 2*pi*H/N radians between
   // frames, where H is HOP_SIZE and N is FFT_SIZE.
-  const float binFreqStep = TWO_PI * (float)HOP_SIZE / (float)FFT_SIZE;
+  const float binFreqStep =
+    kTwoPi * (float)HOP_SIZE / (float)FFT_SIZE;
+  const float inverseBinFreqStep = 1.0f / binFreqStep;
 
   for (int i = 0; i < NUM_BINS; i++) {
     synthMag[i] = 0.0f;
@@ -143,8 +169,9 @@ void AudioEffectPitchShiftFFT::processFrame()
     float trueBin = (float)k;
     if (k > 0 && k < NUM_BINS - 1) {
       float deltaPhase = phase - lastPhase[k] - (float)k * binFreqStep;
-      deltaPhase -= TWO_PI * roundf(deltaPhase / TWO_PI); // wrap to [-pi, pi]
-      trueBin = (float)k + deltaPhase / binFreqStep;
+      deltaPhase -=
+        kTwoPi * roundf(deltaPhase * kInverseTwoPi); // wrap to [-pi, pi]
+      trueBin = (float)k + deltaPhase * inverseBinFreqStep;
     }
     lastPhase[k] = phase;
 
@@ -152,40 +179,57 @@ void AudioEffectPitchShiftFFT::processFrame()
     // fractional frequency by the same ratio. Bins shifted above Nyquist are
     // discarded. If source bins collide, their magnitudes add and the final
     // contributor supplies the output bin's frequency estimate.
-    const float shiftedBin = (float)k * pitchRatio;
+    const float shiftedBin = (float)k * ratio;
     // Check the floating-point value before converting it. This also safely
     // discards bins for extremely large (but otherwise valid) ratios.
     if (shiftedBin >= 0.0f && shiftedBin < (float)NUM_BINS - 0.5f) {
       int newBin = (int)(shiftedBin + 0.5f);
       synthMag[newBin] += mag;
-      synthFreq[newBin] = trueBin * pitchRatio;
+      synthFreq[newBin] = trueBin * ratio;
     }
   }
 
   // --- Synthesis: rebuild the spectrum with coherent inter-frame phase ---
   for (int k = 0; k < NUM_BINS; k++) {
-    float phase = 0.0f;
-    if (k > 0 && k < NUM_BINS - 1) {
-      // Advance by the shifted instantaneous frequency. Wrapping is inaudible
-      // because sin/cos are 2*pi-periodic, and prevents loss of float precision
-      // during long-running use.
-      synthPhaseAccum[k] += synthFreq[k] * binFreqStep;
-      synthPhaseAccum[k] -=
-        TWO_PI * roundf(synthPhaseAccum[k] / TWO_PI);
-      phase = synthPhaseAccum[k];
+    // DC and Nyquist must be real, so they need neither phase accumulation nor
+    // trigonometry.
+    if (k == 0 || k == NUM_BINS - 1) {
+      fftBuf[2 * k] = synthMag[k];
+      fftBuf[2 * k + 1] = 0.0f;
+      continue;
     }
-    float re = synthMag[k] * cosf(phase);
-    float im = (k == 0 || k == NUM_BINS - 1) ? 0.0f : synthMag[k] * sinf(phase);
+
+    // Advance by the shifted instantaneous frequency. Wrapping is inaudible
+    // because sin/cos are 2*pi-periodic, and prevents loss of float precision
+    // during long-running use.
+    synthPhaseAccum[k] += synthFreq[k] * binFreqStep;
+    synthPhaseAccum[k] -=
+      kTwoPi * roundf(synthPhaseAccum[k] * kInverseTwoPi);
+
+    const int mirror = FFT_SIZE - k;
+    // Pitch remapping leaves some output bins empty. Preserve their phase
+    // state above, but avoid trigonometry when multiplying by zero would
+    // produce an empty coefficient anyway.
+    if (synthMag[k] == 0.0f) {
+      fftBuf[2 * k] = 0.0f;
+      fftBuf[2 * k + 1] = 0.0f;
+      fftBuf[2 * mirror] = 0.0f;
+      fftBuf[2 * mirror + 1] = 0.0f;
+      continue;
+    }
+
+    float sine;
+    float cosine;
+    sinCos(synthPhaseAccum[k], sine, cosine);
+    float re = synthMag[k] * cosine;
+    float im = synthMag[k] * sine;
     fftBuf[2 * k] = re;
     fftBuf[2 * k + 1] = im;
-    if (k > 0 && k < NUM_BINS - 1) {
-      // A real time-domain signal has conjugate-symmetric positive and negative
-      // frequency bins: X[N-k] = conjugate(X[k]).
-      // https://en.wikipedia.org/wiki/Discrete_Fourier_transform#DFT_of_real_and_purely_imaginary_signals
-      int mirror = FFT_SIZE - k;
-      fftBuf[2 * mirror] = re;
-      fftBuf[2 * mirror + 1] = -im;
-    }
+    // A real time-domain signal has conjugate-symmetric positive and negative
+    // frequency bins: X[N-k] = conjugate(X[k]).
+    // https://en.wikipedia.org/wiki/Discrete_Fourier_transform#DFT_of_real_and_purely_imaginary_signals
+    fftBuf[2 * mirror] = re;
+    fftBuf[2 * mirror + 1] = -im;
   }
 
   arm_cfft_f32(&arm_cfft_sR_f32_len1024, fftBuf, 1, 1); // includes the 1/FFT_SIZE scaling

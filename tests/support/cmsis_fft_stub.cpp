@@ -1,16 +1,17 @@
 #include "arm_const_structs.h"
 
+#include <array>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <stdexcept>
-#include <vector>
 
 const arm_cfft_instance_f32 arm_cfft_sR_f32_len1024 = {1024};
 
 namespace {
 
 constexpr double kTwoPi = 6.283185307179586476925286766559;
+constexpr std::size_t kMaximumFftSize = 1024;
 
 bool isPowerOfTwo(std::size_t value)
 {
@@ -27,12 +28,17 @@ void arm_cfft_f32(const arm_cfft_instance_f32 *instance,
   if (instance == nullptr || data == nullptr || !isPowerOfTwo(instance->fftLen)) {
     throw std::invalid_argument("invalid CFFT input");
   }
+  if (instance->fftLen > kMaximumFftSize) {
+    throw std::invalid_argument("test CFFT exceeds its fixed scratch buffer");
+  }
   if (bitReverse == 0) {
     throw std::invalid_argument("the test CFFT only supports natural-order output");
   }
 
   const std::size_t size = instance->fftLen;
-  std::vector<std::complex<float>> values(size);
+  // CMSIS uses caller-owned storage and does not allocate for every transform.
+  // Fixed scratch keeps host benchmarks from measuring allocator overhead.
+  std::array<std::complex<float>, kMaximumFftSize> values;
   for (std::size_t i = 0; i < size; ++i) {
     values[i] = {data[2 * i], data[2 * i + 1]};
   }

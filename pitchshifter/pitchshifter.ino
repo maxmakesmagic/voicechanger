@@ -32,18 +32,35 @@ void setup() {
 }
 
 void loop() {
-  // Print CPU/memory usage every second so you can confirm this fits in
-  // real time on your hardware (watch for CPU usage climbing toward 100%).
+  // Snapshot CPU/memory usage every second so serial printing cannot race the
+  // audio ISR. The per-effect peak captures the expensive alternate updates
+  // that call processFrame(); a single current-usage sample may miss them.
   if (usageReportTimer >= 1000) {
     usageReportTimer = 0;
-    Serial.print("CPU: ");
-    Serial.print(AudioProcessorUsage());
-    Serial.print("% (max ");
-    Serial.print(AudioProcessorUsageMax());
+    AudioNoInterrupts();
+    const float pitchCpu = pitchShift.processorUsage();
+    const float pitchCpuMax = pitchShift.processorUsageMax();
+    const float totalCpu = AudioProcessorUsage();
+    const float totalCpuMax = AudioProcessorUsageMax();
+    const unsigned int memory = AudioMemoryUsage();
+    const unsigned int memoryMax = AudioMemoryUsageMax();
+    pitchShift.processorUsageMaxReset();
+    AudioProcessorUsageMaxReset();
+    AudioMemoryUsageMaxReset();
+    AudioInterrupts();
+
+    Serial.print("Pitch CPU: ");
+    Serial.print(pitchCpu);
+    Serial.print("% (peak ");
+    Serial.print(pitchCpuMax);
+    Serial.print("%)  Total CPU: ");
+    Serial.print(totalCpu);
+    Serial.print("% (peak ");
+    Serial.print(totalCpuMax);
     Serial.print("%)  Memory: ");
-    Serial.print(AudioMemoryUsage());
+    Serial.print(memory);
     Serial.print(" (max ");
-    Serial.print(AudioMemoryUsageMax());
+    Serial.print(memoryMax);
     Serial.println(")");
   }
 }

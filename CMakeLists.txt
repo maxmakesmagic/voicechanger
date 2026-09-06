@@ -9,7 +9,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(CTest)
 
 option(VOICECHANGER_ENABLE_SANITIZERS
-       "Build native tests with AddressSanitizer and UndefinedBehaviorSanitizer"
+       "Build host targets with AddressSanitizer and UndefinedBehaviorSanitizer"
+       OFF)
+
+option(VOICECHANGER_BUILD_BENCHMARKS
+       "Build host-side DSP microbenchmarks"
        OFF)
 
 if(BUILD_TESTING)
@@ -54,4 +58,39 @@ if(BUILD_TESTING)
     pitch_shift_tests
     PROPERTIES
       TIMEOUT 60)
+endif()
+
+if(VOICECHANGER_BUILD_BENCHMARKS)
+  add_executable(
+    pitch_shift_benchmark
+    pitchshifter/PitchShiftFFT.cpp
+    tests/support/cmsis_fft_stub.cpp
+    benchmarks/benchmark_pitch_shift.cpp)
+
+  target_include_directories(
+    pitch_shift_benchmark
+    PRIVATE
+      tests/support
+      pitchshifter)
+
+  target_compile_features(pitch_shift_benchmark PRIVATE cxx_std_17)
+
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(
+      pitch_shift_benchmark
+      PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+    if(VOICECHANGER_ENABLE_SANITIZERS)
+      target_compile_options(
+        pitch_shift_benchmark
+        PRIVATE
+          -fno-omit-frame-pointer
+          -fsanitize=address,undefined,float-cast-overflow)
+      target_link_options(
+        pitch_shift_benchmark
+        PRIVATE
+          -fno-omit-frame-pointer
+          -fsanitize=address,undefined,float-cast-overflow)
+    endif()
+  endif()
 endif()
