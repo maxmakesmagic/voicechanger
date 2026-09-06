@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-tests:
+    name: Native tests (ASan/UBSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DVOICECHANGER_ENABLE_SANITIZERS=ON
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --test-dir build --output-on-failure
+
+  arduino-compile:
+    name: Arduino compile (${{ matrix.board }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - board: Teensy 4.0
+            fqbn: teensy:avr:teensy40:usb=serial,speed=600,opt=o2std,keys=en-us
+          - board: Teensy 4.1
+            fqbn: teensy:avr:teensy41:usb=serial,speed=600,opt=o2std,keys=en-us
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+        with:
+          version: 1.5.1
+
+      - name: Install Teensy core
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://www.pjrc.com/teensy/package_teensy_index.json
+          arduino-cli core update-index
+          arduino-cli core install teensy:avr@1.62.0
+
+      - name: Compile all sketches
+        run: bash ci/compile-arduino-sketches.sh "${{ matrix.fqbn }}"

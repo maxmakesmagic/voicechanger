@@ -1,0 +1,88 @@
+{
+  "env": {
+    "teensyPlatform": "${env:HOME}/.arduino15/packages/teensy/hardware/avr/1.62.0",
+    "teensyCompiler": "${env:HOME}/.arduino15/packages/teensy/tools/teensy-compile/15.2.1/arm/bin/arm-none-eabi-g++",
+    "teensyDefines": [
+      "__IMXRT1062__",
+      "TEENSYDUINO=160",
+      "ARDUINO=10607",
+      "F_CPU=600000000",
+      "USB_SERIAL",
+      "LAYOUT_US_ENGLISH"
+    ],
+    "teensyIncludes": [
+      "${workspaceFolder}",
+      "${teensyPlatform}/cores/teensy4",
+      "${teensyPlatform}/libraries/Audio",
+      "${teensyPlatform}/libraries/SPI",
+      "${teensyPlatform}/libraries/SD/src",
+      "${teensyPlatform}/libraries/SdFat/src",
+      "${teensyPlatform}/libraries/SerialFlash",
+      "${teensyPlatform}/libraries/Wire"
+    ]
+  },
+  "configurations": [
+    {
+      "name": "Teensy 4.0",
+      "compilerPath": "${teensyCompiler}",
+      "compilerArgs": [
+        "-mthumb",
+        "-mcpu=cortex-m7",
+        "-mfloat-abi=hard",
+        "-mfpu=fpv5-d16"
+      ],
+      "intelliSenseMode": "linux-gcc-arm",
+      "includePath": [
+        "${teensyIncludes}"
+      ],
+      "defines": [
+        "${teensyDefines}",
+        "ARDUINO_TEENSY40"
+      ],
+      "forcedInclude": [
+        "${teensyPlatform}/cores/teensy4/Arduino.h"
+      ],
+      "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+      "cStandard": "gnu11",
+      "cppStandard": "gnu++17",
+      "browse": {
+        "path": [
+          "${teensyIncludes}"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      }
+    },
+    {
+      "name": "Teensy 4.1",
+      "compilerPath": "${teensyCompiler}",
+      "compilerArgs": [
+        "-mthumb",
+        "-mcpu=cortex-m7",
+        "-mfloat-abi=hard",
+        "-mfpu=fpv5-d16"
+      ],
+      "intelliSenseMode": "linux-gcc-arm",
+      "includePath": [
+        "${teensyIncludes}"
+      ],
+      "defines": [
+        "${teensyDefines}",
+        "ARDUINO_TEENSY41"
+      ],
+      "forcedInclude": [
+        "${teensyPlatform}/cores/teensy4/Arduino.h"
+      ],
+      "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+      "cStandard": "gnu11",
+      "cppStandard": "gnu++17",
+      "browse": {
+        "path": [
+          "${teensyIncludes}"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      }
+    }
+  ],
+  "version": 4,
+  "enableConfigurationSquiggles": true
+}
