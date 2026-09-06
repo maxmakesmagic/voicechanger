@@ -45,6 +45,23 @@ EXAMPLES = (
         ),
         "503f4346710ef1925ea4f46b1cde04e4c64842c78c5da50f164114c0d28c3640",
     ),
+    (
+        "vocoder.wav",
+        (
+            "vocoder",
+            "--carrier-hz",
+            "110",
+            "--attack-ms",
+            "2",
+            "--release-ms",
+            "35",
+            "--noise-mix",
+            "0.25",
+            "--gate-dbfs",
+            "-60",
+        ),
+        "cb54b9c26421e2e69c026cd5e96e8752144c352e4511be5e8aaca78811bc2886",
+    ),
 )
 
 

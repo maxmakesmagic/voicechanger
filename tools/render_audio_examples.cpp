@@ -2,6 +2,7 @@
 
 #include "PitchShiftFFT.h"
 #include "StereoChorus.h"
+#include "Vocoder.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -57,7 +58,10 @@ void printUsage(const char *program)
     << "Usage:\n"
     << "  " << program << " pitch --ratio R INPUT OUTPUT\n"
     << "  " << program
-    << " chorus --delay-ms D --depth-ms D --rate-hz R --wet W INPUT OUTPUT\n";
+    << " chorus --delay-ms D --depth-ms D --rate-hz R --wet W INPUT OUTPUT\n"
+    << "  " << program
+    << " vocoder --carrier-hz F --attack-ms A --release-ms R "
+       "--noise-mix N --gate-dbfs G INPUT OUTPUT\n";
 }
 
 float parseNumber(const std::string &text, const std::string &option)
@@ -253,6 +257,85 @@ voicechanger::wav::AudioData renderChorus(
   return result;
 }
 
+void validateVocoderOwnership(std::size_t completedBlocks)
+{
+  if (AudioStream::channelTransmissionCount(0) != completedBlocks ||
+      AudioStream::channelTransmissionCount(1) != 0U ||
+      AudioStream::transmissionCount() != completedBlocks ||
+      AudioStream::releaseCount() != completedBlocks ||
+      AudioStream::ownershipErrorCount() != 0U ||
+      AudioStream::hasOutstandingBlocks()) {
+    throw std::runtime_error(
+      "vocoder violated AudioStream block ownership while rendering");
+  }
+}
+
+voicechanger::wav::AudioData renderVocoder(
+  const voicechanger::wav::AudioData &input,
+  float carrierHz,
+  float attackMs,
+  float releaseMs,
+  float noiseMix,
+  float gateThresholdDbfs)
+{
+  AudioStreamStateGuard streamState;
+  AudioEffectVocoder effect;
+  if (!effect.configure(carrierHz,
+                        attackMs,
+                        releaseMs,
+                        noiseMix,
+                        gateThresholdDbfs)) {
+    throw UsageError(
+      "invalid vocoder settings: carrier must be between 40 and 1000 Hz, "
+      "attack between 0 and 1000 ms, release between 0 and 5000 ms, and "
+      "noise mix between 0 and 1; gate threshold must be between -96 and "
+      "0 dBFS");
+  }
+
+  const std::size_t streamedSamples = roundUpToBlock(input.samples.size());
+  std::vector<std::int16_t> streamedOutput;
+  streamedOutput.reserve(streamedSamples);
+  std::size_t completedBlocks = 0;
+  for (std::size_t offset = 0; offset < streamedSamples;
+       offset += AUDIO_BLOCK_SAMPLES) {
+    audio_block_t block{};
+    if (offset < input.samples.size()) {
+      const std::size_t available = input.samples.size() - offset;
+      const std::size_t copyCount =
+        std::min<std::size_t>(AUDIO_BLOCK_SAMPLES, available);
+      std::copy_n(input.samples.begin() + static_cast<std::ptrdiff_t>(offset),
+                  copyCount,
+                  block.data);
+    }
+
+    AudioStream::queueTestInput(&block);
+    effect.update();
+    ++completedBlocks;
+    const audio_block_t *output = AudioStream::transmittedSnapshot(0);
+    if (output == nullptr) {
+      throw std::runtime_error(
+        "vocoder did not transmit an output audio block");
+    }
+    streamedOutput.insert(streamedOutput.end(),
+                          std::begin(output->data),
+                          std::end(output->data));
+    validateVocoderOwnership(completedBlocks);
+  }
+
+  if (input.samples.size() > streamedOutput.size()) {
+    throw std::runtime_error("vocoder did not produce enough output");
+  }
+
+  voicechanger::wav::AudioData result;
+  result.sampleRate = kRequiredSampleRate;
+  result.channels = 1;
+  result.samples.assign(
+    streamedOutput.begin(),
+    streamedOutput.begin() +
+      static_cast<std::ptrdiff_t>(input.samples.size()));
+  return result;
+}
+
 void renderPitchCommand(int argc, char **argv)
 {
   if (argc != 6 || std::string(argv[2]) != "--ratio") {
@@ -293,6 +376,38 @@ void renderChorusCommand(int argc, char **argv)
             << " stereo chorus frames to " << argv[11] << '\n';
 }
 
+void renderVocoderCommand(int argc, char **argv)
+{
+  if (argc != 14 || std::string(argv[2]) != "--carrier-hz" ||
+      std::string(argv[4]) != "--attack-ms" ||
+      std::string(argv[6]) != "--release-ms" ||
+      std::string(argv[8]) != "--noise-mix" ||
+      std::string(argv[10]) != "--gate-dbfs") {
+    throw UsageError(
+      "vocoder expects --carrier-hz F --attack-ms A --release-ms R "
+      "--noise-mix N --gate-dbfs G followed by INPUT and OUTPUT");
+  }
+
+  const float carrierHz = parseNumber(argv[3], "--carrier-hz");
+  const float attackMs = parseNumber(argv[5], "--attack-ms");
+  const float releaseMs = parseNumber(argv[7], "--release-ms");
+  const float noiseMix = parseNumber(argv[9], "--noise-mix");
+  const float gateThresholdDbfs = parseNumber(argv[11], "--gate-dbfs");
+  const voicechanger::wav::AudioData input =
+    voicechanger::wav::readPcm16(argv[12]);
+  requireMono44100(input);
+  const voicechanger::wav::AudioData output =
+    renderVocoder(input,
+                  carrierHz,
+                  attackMs,
+                  releaseMs,
+                  noiseMix,
+                  gateThresholdDbfs);
+  voicechanger::wav::writePcm16(argv[13], output);
+  std::cout << "Rendered " << output.frameCount()
+            << " mono vocoder frames to " << argv[13] << '\n';
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -307,6 +422,8 @@ int main(int argc, char **argv)
       renderPitchCommand(argc, argv);
     } else if (effect == "chorus") {
       renderChorusCommand(argc, argv);
+    } else if (effect == "vocoder") {
+      renderVocoderCommand(argc, argv);
     } else {
       throw UsageError("unknown effect '" + effect + "'");
     }

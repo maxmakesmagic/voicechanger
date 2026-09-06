@@ -15,6 +15,7 @@
       "${workspaceFolder}/chorus",
       "${workspaceFolder}/libraries/VoiceChangerCommon/src",
       "${workspaceFolder}/pitchshifter",
+      "${workspaceFolder}/vocoder",
       "${teensyPlatform}/cores/teensy4",
       "${teensyPlatform}/libraries/Audio",
       "${teensyPlatform}/libraries/SPI",

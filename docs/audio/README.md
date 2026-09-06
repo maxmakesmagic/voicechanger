@@ -1,6 +1,6 @@
 # Audio example provenance
 
-The four WAV files in this directory use the same 17.84-second, mono voice
+The five WAV files in this directory use the same 17.84-second, mono voice
 recording as their source. They are lossless 16-bit PCM at 44.1 kHz so codec
 artifacts do not obscure the DSP comparison.
 
@@ -48,6 +48,12 @@ post-effect gain adjustment or loudness normalization is applied:
 | `pitch-up-1.25.wav` | Pitch ratio 1.25 | 1 | `d727bd50b0e2a5677e0a26152dfbadb29e974ada9ab91bee18aad0116a58b516` |
 | `pitch-down-0.80.wav` | Pitch ratio 0.80 | 1 | `cb13643738d6aa6a6d78bab7b9c149d30a43e079dbbed4477b7ccb182c755081` |
 | `chorus.wav` | 18 ms delay, 8 ms depth, 0.8 Hz, 60% wet | 2 | `503f4346710ef1925ea4f46b1cde04e4c64842c78c5da50f164114c0d28c3640` |
+| `vocoder.wav` | 110 Hz carrier, 2 ms attack, 35 ms release, 25% noise mix, -60 dBFS gate | 1 | `cb54b9c26421e2e69c026cd5e96e8752144c352e4511be5e8aaca78811bc2886` |
+
+The vocoder's input gate prevents the source recording's low-level noise floor
+from holding the synthetic carrier open between spoken phrases.
+Its demo preset uses faster envelope timing and more carrier noise than the
+live sketch default so that this recording's consonants remain clear.
 
 The host renderer links the production DSP sources to the tested portable
 CMSIS implementations in `tests/support/`. Cortex-M7 floating-point rounding
