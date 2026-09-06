@@ -111,8 +111,10 @@ The benchmark reports the median, median absolute deviation, minimum, and 95th
 percentile of repeated trial-average frame times for pitch ratios `0.8`, `1.0`,
 and `1.25`. Its throughput factor describes average host throughput, not Teensy
 callback-deadline headroom. Keep the machine, compiler, flags, and workload
-identical when comparing the same ratio across revisions. CI smoke-tests the
-harness but deliberately does not enforce a timing threshold on shared runners.
+identical when comparing the same ratio across revisions. CI runs a separate
+optimized benchmark, validates its output, adds its results to the workflow
+summary, and retains the raw result as an artifact. The timing is deliberately
+not a blocking threshold because load on a shared runner is not deterministic.
 
 For the target measurement, flash each revision with the same board, Teensy
 core, FQBN, pitch ratio, audio graph, and repeatable input. Discard the first two
@@ -131,6 +133,14 @@ sketch directory for a supplied fully qualified board name (FQBN). Each sketch
 must follow Arduino's naming rule: `<folder>/<folder>.ino`. This means a newly
 added effect is included in Arduino compilation testing without changing the
 script or workflow.
+
+After each build, the script uses Teensy's own size tool to check FLASH, RAM1,
+and RAM2 against the exact per-build-configuration upper bounds in
+`ci/arduino-size-budgets.json`. A reduction passes automatically. An increase,
+or a new sketch without a budget, fails so that resource growth has to be
+reviewed and recorded explicitly. The measured use and remaining budget are
+also shown in the GitHub Actions job summary. Budgets use the complete FQBN, so
+changing USB or optimization options also requires a deliberate new baseline.
 
 After installing Arduino CLI and the Teensy core, run it locally with either
 supported board configuration:
