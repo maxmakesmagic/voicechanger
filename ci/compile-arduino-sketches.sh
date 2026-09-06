@@ -10,6 +10,9 @@ fi
 fqbn=$1
 fqbn_key=${fqbn//[^a-zA-Z0-9._-]/_}
 build_root=${ARDUINO_BUILD_ROOT:-build/arduino}
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+budget_file=${VOICECHANGER_SIZE_BUDGETS:-"$script_dir/arduino-size-budgets.json"}
+teensy_size=${VOICECHANGER_TEENSY_SIZE:-}
 sketch_count=0
 
 # An Arduino sketch directory must contain a primary .ino file with the same
@@ -32,6 +35,27 @@ while IFS= read -r -d '' sketch_dir; do
     --warnings all \
     --build-path "$build_path" \
     "$sketch_dir"
+
+  if [[ -z "$teensy_size" ]]; then
+    teensy_tools_path=$(
+      arduino-cli board details \
+        --fqbn "$fqbn" \
+        --show-properties=expanded |
+        sed -n 's/^runtime\.tools\.teensy-tools\.path=//p'
+    )
+    if [[ -z "$teensy_tools_path" ]]; then
+      echo "error: could not locate teensy_size for $fqbn" >&2
+      exit 1
+    fi
+    teensy_size="$teensy_tools_path/teensy_size"
+  fi
+
+  python3 "$script_dir/check-arduino-size.py" \
+    --budgets "$budget_file" \
+    --board "$fqbn" \
+    --sketch "$sketch_name" \
+    --elf "$build_path/$sketch_name.ino.elf" \
+    --teensy-size "$teensy_size"
   sketch_count=$((sketch_count + 1))
 done < <(
   find . -mindepth 2 -maxdepth 2 -type f -name '*.ino' -printf '%h\0' |

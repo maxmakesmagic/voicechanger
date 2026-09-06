@@ -45,6 +45,52 @@ jobs:
           --warmups 1
           --ratio 1.0
 
+  native-benchmark:
+    name: Native benchmark (Release report)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Configure optimized benchmark
+        run: >-
+          cmake -S . -B build-perf
+          -DBUILD_TESTING=OFF
+          -DVOICECHANGER_BUILD_BENCHMARKS=ON
+          -DVOICECHANGER_ENABLE_SANITIZERS=OFF
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG"
+
+      - name: Build optimized benchmark
+        run: >-
+          cmake --build build-perf
+          --target pitch_shift_benchmark
+          --parallel 2
+
+      - name: Run and validate benchmark
+        run: |
+          set -o pipefail
+          ./build-perf/pitch_shift_benchmark \
+            --blocks 16384 \
+            --repetitions 9 \
+            --warmups 2 2>&1 | tee build-perf/pitch-shift-benchmark.txt
+          python3 ci/report-host-benchmark.py \
+            build-perf/pitch-shift-benchmark.txt \
+            --blocks 16384 \
+            --repetitions 9 \
+            --warmups 2
+
+      - name: Upload benchmark result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: host-pitch-shift-benchmark-${{ github.run_attempt }}
+          path: build-perf/pitch-shift-benchmark.txt
+          if-no-files-found: warn
+          retention-days: 30
+
   arduino-compile:
     name: Arduino compile (${{ matrix.board }})
     runs-on: ubuntu-latest
