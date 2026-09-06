@@ -12,6 +12,8 @@
     ],
     "teensyIncludes": [
       "${workspaceFolder}",
+      "${workspaceFolder}/chorus",
+      "${workspaceFolder}/libraries/VoiceChangerCommon/src",
       "${workspaceFolder}/pitchshifter",
       "${teensyPlatform}/cores/teensy4",
       "${teensyPlatform}/libraries/Audio",

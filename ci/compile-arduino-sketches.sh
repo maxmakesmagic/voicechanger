@@ -11,9 +11,16 @@ fqbn=$1
 fqbn_key=${fqbn//[^a-zA-Z0-9._-]/_}
 build_root=${ARDUINO_BUILD_ROOT:-build/arduino}
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+repository_root=$(cd -- "$script_dir/.." && pwd)
+common_library="$repository_root/libraries/VoiceChangerCommon"
 budget_file=${VOICECHANGER_SIZE_BUDGETS:-"$script_dir/arduino-size-budgets.json"}
 teensy_size=${VOICECHANGER_TEENSY_SIZE:-}
 sketch_count=0
+
+if [[ ! -f "$common_library/library.properties" ]]; then
+  echo "error: common Arduino library not found: $common_library" >&2
+  exit 1
+fi
 
 # An Arduino sketch directory must contain a primary .ino file with the same
 # name as the directory. Discover root-level effect directories so a newly
@@ -33,6 +40,7 @@ while IFS= read -r -d '' sketch_dir; do
   arduino-cli compile \
     --fqbn "$fqbn" \
     --warnings all \
+    --library "$common_library" \
     --build-path "$build_path" \
     "$sketch_dir"
 

@@ -1,5 +1,10 @@
 {
   "teensy:avr:teensy40:usb=serial,speed=600,opt=o2std,keys=en-us": {
+    "chorus": {
+      "FLASH": 76796,
+      "RAM1": 82016,
+      "RAM2": 18656
+    },
     "pitchshifter": {
       "FLASH": 92156,
       "RAM1": 117888,
@@ -7,6 +12,11 @@
     }
   },
   "teensy:avr:teensy41:usb=serial,speed=600,opt=o2std,keys=en-us": {
+    "chorus": {
+      "FLASH": 77820,
+      "RAM1": 82016,
+      "RAM2": 18656
+    },
     "pitchshifter": {
       "FLASH": 94204,
       "RAM1": 118912,
