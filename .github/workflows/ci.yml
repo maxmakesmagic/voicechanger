@@ -22,6 +22,7 @@ jobs:
         run: >-
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Debug
+          -DVOICECHANGER_BUILD_BENCHMARKS=ON
           -DVOICECHANGER_ENABLE_SANITIZERS=ON
 
       - name: Build
@@ -32,6 +33,17 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: ctest --test-dir build --output-on-failure
+
+      - name: Smoke-test benchmark harness
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: >-
+          ./build/pitch_shift_benchmark
+          --blocks 64
+          --repetitions 1
+          --warmups 1
+          --ratio 1.0
 
   arduino-compile:
     name: Arduino compile (${{ matrix.board }})

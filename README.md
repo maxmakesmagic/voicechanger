@@ -18,6 +18,12 @@ the result to both line-output channels.
 - `PITCH_RATIO` in `pitchshifter.ino` controls the effect: values above `1.0`
   shift upward and values below `1.0` shift downward.
 
+Once flashed, the sketch reports both whole-audio-graph CPU use and the pitch
+shifter's own current and one-second peak use. `processFrame()` runs only on
+alternate audio updates, so use the `Pitch CPU` peak after warm-up when checking
+real-time headroom; values approaching 100% are approaching the audio-block
+deadline.
+
 ### Compile locally
 
 Install Arduino CLI 1.5.1, then install the pinned Teensy core:
@@ -76,6 +82,43 @@ To match the sanitizer-enabled CI job, add
 
 These tests currently cover only the pitch shifter. Listening quality, Audio
 Shield I/O, and real-time CPU headroom still require hardware testing.
+
+## [`benchmarks/`](benchmarks/)
+
+The host benchmark streams deterministic broadband audio through the same
+public `update()` interface as the tests. It is intended for repeatable A/B
+comparisons of individual C++ changes; its x86 timing is not a substitute for
+measuring the CMSIS-DSP build on a Teensy.
+
+Build and run an optimized benchmark without sanitizers:
+
+```sh
+cmake -S . -B build-bench \
+  -DBUILD_TESTING=OFF \
+  -DVOICECHANGER_BUILD_BENCHMARKS=ON \
+  -DVOICECHANGER_ENABLE_SANITIZERS=OFF \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG"
+cmake --build build-bench --target pitch_shift_benchmark --parallel
+./build-bench/pitch_shift_benchmark
+```
+
+The benchmark reports the median, median absolute deviation, minimum, and 95th
+percentile of repeated trial-average frame times for pitch ratios `0.8`, `1.0`,
+and `1.25`. Its throughput factor describes average host throughput, not Teensy
+callback-deadline headroom. Keep the machine, compiler, flags, and workload
+identical when comparing the same ratio across revisions. CI smoke-tests the
+harness but deliberately does not enforce a timing threshold on shared runners.
+
+For the target measurement, flash each revision with the same board, Teensy
+core, FQBN, pitch ratio, audio graph, and repeatable input. Discard the first two
+seconds, capture at least 30 `Pitch CPU` peak reports, and compare their median,
+95th percentile, and maximum. This measures the deadline-critical callback on
+the Cortex-M7 rather than extrapolating it from the host.
+
+When comparing with a revision that predates the per-effect CPU report, keep
+the same instrumented sketch and swap only the DSP implementation under test.
+Changing both would make the measurements incomparable.
 
 ## [`ci/`](ci/)
 
